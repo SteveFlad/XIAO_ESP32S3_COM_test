@@ -619,54 +619,82 @@ class ESP32S3_GUI:
             self.root.after(0, lambda: self.update_status(f"BLE connection error: {str(e)}"))
     
     async def _connect_ble(self, device):
-        """Connect to BLE device"""
-        try:
-            self.ble_client = BleakClient(device.address)
-            await self.ble_client.connect()
-            
-            # Check if device has our custom service and characteristic
-            services = self.ble_client.services
-            service_found = False
-            characteristic_found = False
-            
-            for service in services:
-                if service.uuid.lower() == self.SERVICE_UUID.lower():
-                    service_found = True
-                    for char in service.characteristics:
-                        if char.uuid.lower() == self.CHARACTERISTIC_UUID.lower():
-                            characteristic_found = True
-                            break
-                    break
-            
-            if not service_found:
-                await self.ble_client.disconnect()
-                self.root.after(0, lambda: messagebox.showerror("BLE Error", 
-                    f"Device '{device.name}' does not have the required service.\n\n"
-                    f"Expected Service UUID: {self.SERVICE_UUID}\n\n"
-                    f"This device may not be your XIAO ESP32S3. Please select the correct device."))
-                return
-            
-            if not characteristic_found:
-                await self.ble_client.disconnect()
-                self.root.after(0, lambda: messagebox.showerror("BLE Error", 
-                    f"Device '{device.name}' does not have the required characteristic.\n\n"
-                    f"Expected Characteristic UUID: {self.CHARACTERISTIC_UUID}\n\n"
-                    f"Make sure your ESP32S3 is running the correct firmware."))
-                return
-            
-            # Subscribe to notifications
-            await self.ble_client.start_notify(self.CHARACTERISTIC_UUID, self._ble_notification_handler)
-            
-            self.is_connected_ble = True
-            self.root.after(0, lambda: self._ble_connected(device))
-            
-        except Exception as e:
-            if self.ble_client:
-                try:
+        """Connect to BLE device with retry logic"""
+        max_retries = 3
+        retry_delay = 2
+        
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    self.root.after(0, lambda a=attempt: self.update_status(f"Retry attempt {a}/{max_retries}..."))
+                    await asyncio.sleep(retry_delay)
+                
+                self.root.after(0, lambda: self.update_status(f"Connecting to {device.name}..."))
+                self.ble_client = BleakClient(device.address, timeout=20.0)
+                await self.ble_client.connect(timeout=20.0)
+                
+                # Give device time to stabilize
+                await asyncio.sleep(0.5)
+                
+                # Check if device has our custom service and characteristic
+                services = self.ble_client.services
+                service_found = False
+                characteristic_found = False
+                
+                for service in services:
+                    if service.uuid.lower() == self.SERVICE_UUID.lower():
+                        service_found = True
+                        for char in service.characteristics:
+                            if char.uuid.lower() == self.CHARACTERISTIC_UUID.lower():
+                                characteristic_found = True
+                                break
+                        break
+                
+                if not service_found:
                     await self.ble_client.disconnect()
-                except:
-                    pass
-            self.root.after(0, lambda: messagebox.showerror("BLE Error", f"Failed to connect to '{device.name}':\n{str(e)}"))
+                    self.root.after(0, lambda: messagebox.showerror("BLE Error", 
+                        f"Device '{device.name}' does not have the required service.\n\n"
+                        f"Expected Service UUID: {self.SERVICE_UUID}\n\n"
+                        f"This device may not be your XIAO ESP32S3. Please select the correct device."))
+                    return
+                
+                if not characteristic_found:
+                    await self.ble_client.disconnect()
+                    self.root.after(0, lambda: messagebox.showerror("BLE Error", 
+                        f"Device '{device.name}' does not have the required characteristic.\n\n"
+                        f"Expected Characteristic UUID: {self.CHARACTERISTIC_UUID}\n\n"
+                        f"Make sure your ESP32S3 is running the correct firmware."))
+                    return
+                
+                # Subscribe to notifications
+                await self.ble_client.start_notify(self.CHARACTERISTIC_UUID, self._ble_notification_handler)
+                
+                self.is_connected_ble = True
+                self.root.after(0, lambda: self._ble_connected(device))
+                return  # Success!
+                
+            except Exception as e:
+                error_msg = str(e)
+                device_name = device.name
+                if self.ble_client:
+                    try:
+                        await self.ble_client.disconnect()
+                    except:
+                        pass
+                
+                # If this was the last attempt, show error
+                if attempt == max_retries - 1:
+                    self.root.after(0, lambda: messagebox.showerror("BLE Error", 
+                        f"Failed to connect to '{device_name}' after {max_retries} attempts.\n\n"
+                        f"Error: {error_msg}\n\n"
+                        f"Troubleshooting:\n"
+                        f"1. Unplug and replug the ESP32S3 USB cable\n"
+                        f"2. Remove device from Windows Bluetooth settings\n"
+                        f"3. Turn Windows Bluetooth off/on\n"
+                        f"4. Make sure no other app is connected to it"))
+                else:
+                    # Not the last attempt, continue loop
+                    self.root.after(0, lambda: self.update_status(f"Connection attempt failed: {error_msg}"))
     
     def _ble_connected(self, device):
         """Handle successful BLE connection"""
