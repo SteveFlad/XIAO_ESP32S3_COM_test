@@ -31,6 +31,9 @@ unsigned long testCounter = 0;
 unsigned long usbMessageCount = 0;
 unsigned long bleMessageCount = 0;
 
+// Forward declarations
+void showBLEStatus();
+
 // BLE Server Callbacks
 class MyServerCallbacks: public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) {
@@ -62,8 +65,10 @@ class MyCallbacks: public BLECharacteristicCallbacks {
             Serial.print("[BLE] Received: ");
             Serial.println(input);
             
-            // Process command and get response
-            processCommand(input, true);
+            // Echo back with message count
+            String response = "BLE Echo #" + String(bleMessageCount) + ": " + String(rxValue.c_str());
+            pCharacteristic->setValue(response.c_str());
+            pCharacteristic->notify();
         }
     }
 };
@@ -107,7 +112,11 @@ void setupBLE() {
     
     Serial.println("[BLE] Server started, advertising as 'XIAO-ESP32S3-Test'");
     Serial.println("[BLE] Service UUID: " + String(SERVICE_UUID));
-    Serial.println("[BLE] Device should now be discoverable!");
+    Serial.println("[BLE] Characteristic UUID: " + String(CHARACTERISTIC_UUID));
+    Serial.println("[BLE] ✓ Advertising is ACTIVE");
+    Serial.println("[BLE] ✓ Device is DISCOVERABLE");
+    Serial.println("[BLE] Look for 'XIAO-ESP32S3-Test' in BLE scanners");
+    Serial.println("[BLE] Type 'b' to check advertising status anytime");
 }
 
 
@@ -121,6 +130,7 @@ void printMenu() {
     Serial.println("  r - Restart BLE advertising");
     Serial.println("  c - Show message counters");
     Serial.println("  m - Show memory info");
+    Serial.println("  b - Show BLE advertising status");
     Serial.println("  Any other text will be echoed back");
     Serial.println("=========================================\n");
 }
@@ -167,42 +177,6 @@ void showMemoryInfo() {
     Serial.println("==========================\n");
 }
 
-void processCommand(String input, bool isBLE) {
-    String response = "";
-    
-    if (input == "h") {
-        printMenu();
-        response = "Help menu sent to USB Serial";
-    } else if (input == "s") {
-        showStatus();
-        response = "Status info sent to USB Serial";
-    } else if (input == "t") {
-        sendTestMessage();
-        response = "Test message sent";
-    } else if (input == "r") {
-        BLEDevice::startAdvertising();
-        Serial.println("[BLE] Advertising restarted");
-        response = "BLE advertising restarted";
-    } else if (input == "c") {
-        showCounters();
-        response = "Counters sent to USB Serial";
-    } else if (input == "m") {
-        showMemoryInfo();
-        response = "Memory info sent to USB Serial";
-    } else if (input.length() > 0) {
-        response = "Echo: " + input;
-        if (!isBLE) {
-            Serial.println("[USB Echo] You sent: " + input);
-        }
-    }
-    
-    // Send response back via BLE if this was a BLE command
-    if (isBLE && bleConnected && pCharacteristic && response.length() > 0) {
-        pCharacteristic->setValue(response.c_str());
-        pCharacteristic->notify();
-    }
-}
-
 void setup() {
     // Initialize USB Serial
     Serial.begin(115200);
@@ -233,7 +207,22 @@ void loop() {
         input.trim();
         usbMessageCount++;
         
-        processCommand(input, false);
+        if (input == "h") {
+            printMenu();
+        } else if (input == "s") {
+            showStatus();
+        } else if (input == "t") {
+            sendTestMessage();
+        } else if (input == "r") {
+            BLEDevice::startAdvertising();
+            Serial.println("[BLE] Advertising restarted");
+        } else if (input == "c") {
+            showCounters();
+        } else if (input == "m") {
+            showMemoryInfo();
+        } else if (input.length() > 0) {
+            Serial.println("[USB Echo] You sent: " + input);
+        }
     }
     
 
@@ -242,6 +231,9 @@ void loop() {
     if (millis() - lastStatusUpdate > 30000) {
         Serial.println("\n[Periodic Update] System running - " + String(millis() / 1000) + "s uptime");
         Serial.println("Connections: USB=Active, BLE=" + String(bleConnected ? "Connected" : "Advertising"));
+        if (!bleConnected) {
+            Serial.println("[BLE] Still advertising as 'XIAO-ESP32S3-Test' - ready for connections");
+        }
         lastStatusUpdate = millis();
     }
     
