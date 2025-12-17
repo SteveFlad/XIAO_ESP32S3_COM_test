@@ -50,12 +50,12 @@ class MyServerCallbacks: public BLEServerCallbacks {
 };
 
 // Forward declarations
-void processCommand(String input, bool isBLE);
+String processCommand(String input, bool isBLE);
 
 // BLE Characteristic Callbacks
 class MyCallbacks: public BLECharacteristicCallbacks {
-    void onWrite(BLECharacteristic *pCharacteristic) {
-        std::string rxValue = pCharacteristic->getValue();
+    void onWrite(BLECharacteristic *pChar) {
+        std::string rxValue = pChar->getValue();
         bleMessageCount++;
         
         if (rxValue.length() > 0) {
@@ -65,10 +65,14 @@ class MyCallbacks: public BLECharacteristicCallbacks {
             Serial.print("[BLE] Received: ");
             Serial.println(input);
             
-            // Echo back with message count
-            String response = "BLE Echo #" + String(bleMessageCount) + ": " + String(rxValue.c_str());
-            pCharacteristic->setValue(response.c_str());
-            pCharacteristic->notify();
+            // Process the command
+            String response = processCommand(input, true);
+            
+            // Send response back via BLE
+            if (response.length() > 0) {
+                pChar->setValue(response.c_str());
+                pChar->notify();
+            }
         }
     }
 };
@@ -177,6 +181,38 @@ void showMemoryInfo() {
     Serial.println("==========================\n");
 }
 
+String processCommand(String input, bool isBLE) {
+    String response = "";
+    
+    if (input == "h") {
+        printMenu();
+        response = "Help menu sent to USB Serial";
+    } else if (input == "s") {
+        showStatus();
+        response = "Status displayed on USB Serial";
+    } else if (input == "t") {
+        sendTestMessage();
+        response = "Test message sent";
+    } else if (input == "r") {
+        BLEDevice::startAdvertising();
+        Serial.println("[BLE] Advertising restarted");
+        response = "BLE advertising restarted";
+    } else if (input == "c") {
+        showCounters();
+        response = "Counters displayed on USB Serial";
+    } else if (input == "m") {
+        showMemoryInfo();
+        response = "Memory info displayed on USB Serial";
+    } else if (input.length() > 0) {
+        response = "Echo: " + input;
+        if (!isBLE) {
+            Serial.println("[USB Echo] You sent: " + input);
+        }
+    }
+    
+    return response;
+}
+
 void setup() {
     // Initialize USB Serial
     Serial.begin(115200);
@@ -207,22 +243,7 @@ void loop() {
         input.trim();
         usbMessageCount++;
         
-        if (input == "h") {
-            printMenu();
-        } else if (input == "s") {
-            showStatus();
-        } else if (input == "t") {
-            sendTestMessage();
-        } else if (input == "r") {
-            BLEDevice::startAdvertising();
-            Serial.println("[BLE] Advertising restarted");
-        } else if (input == "c") {
-            showCounters();
-        } else if (input == "m") {
-            showMemoryInfo();
-        } else if (input.length() > 0) {
-            Serial.println("[USB Echo] You sent: " + input);
-        }
+        processCommand(input, false);
     }
     
 

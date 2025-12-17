@@ -1,4 +1,5 @@
-y"""
+
+"""
 Installation and Setup Script for XIAO ESP32S3 GUI
 This script helps install required dependencies and launch the GUI application.
 """
