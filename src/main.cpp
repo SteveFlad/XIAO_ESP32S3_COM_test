@@ -16,10 +16,22 @@
 #include <BLEServer.h>
 #include <BLEUtils.h>
 #include <BLE2902.h>
+#include <ICM_20948.h>
+#include <Wire.h>
 
 // BLE Configuration
 #define SERVICE_UUID        "12345678-1234-1234-1234-123456789abc"
 #define CHARACTERISTIC_UUID "87654321-4321-4321-4321-cba987654321"
+
+// ICM20948 Sensor
+ICM_20948_I2C icm;
+bool icmAvailable = false;
+
+// I2C Pins for XIAO ESP32S3
+// Trying common ESP32-S3 I2C pin combinations
+#define I2C_SDA 5  // Try GPIO5
+#define I2C_SCL 6  // Try GPIO6
+#define AD0_VAL 0  // I2C address bit (0 or 1) - sensor detected at 0x68
 
 BLEServer* pServer = nullptr;
 BLECharacteristic* pCharacteristic = nullptr;
@@ -135,6 +147,8 @@ void printMenu() {
     Serial.println("  c - Show message counters");
     Serial.println("  m - Show memory info");
     Serial.println("  b - Show BLE advertising status");
+    Serial.println("  i - Show ICM20948 sensor data (IMU)");
+    Serial.println("  scan - Scan I2C bus for devices");
     Serial.println("  Any other text will be echoed back");
     Serial.println("=========================================\n");
 }
@@ -181,6 +195,92 @@ void showMemoryInfo() {
     Serial.println("==========================\n");
 }
 
+void scanI2C() {
+    Serial.println("\n=== I2C Device Scanner ===");
+    byte error, address;
+    int deviceCount = 0;
+    
+    Serial.println("Scanning I2C bus...");
+    Serial.print("SDA=GPIO"); Serial.print(I2C_SDA);
+    Serial.print(", SCL=GPIO"); Serial.println(I2C_SCL);
+    Serial.println("Check: SCL should be at 3.3V when idle!");
+    Serial.print("Scanning addresses 0x01 to 0x7F... ");
+    Serial.flush();
+    
+    for(address = 1; address < 127; address++) {
+        // Print progress every 16 addresses
+        if (address % 16 == 0) {
+            Serial.print(".");
+            Serial.flush();
+        }
+        
+        Wire.beginTransmission(address);
+        error = Wire.endTransmission(true);  // Send stop bit
+        
+        if (error == 0) {
+            Serial.println();  // New line after progress dots
+            Serial.print("Device found at 0x");
+            if (address < 16) Serial.print("0");
+            Serial.print(address, HEX);
+            Serial.print(" (");
+            Serial.print(address);
+            Serial.println(")");
+            deviceCount++;
+        }
+        
+        delay(5);  // Small delay between scans
+    }
+    
+    Serial.println(" Done!");
+    
+    if (deviceCount == 0) {
+        Serial.println("No I2C devices found!");
+        Serial.println("Check:");
+        Serial.println("  - Wiring connections");
+        Serial.println("  - Pull-up resistors (may be needed)");
+        Serial.println("  - Power supply (3.3V)");
+    } else {
+        Serial.print("Found ");
+        Serial.print(deviceCount);
+        Serial.println(" device(s)");
+    }
+    Serial.println("==========================\n");
+}
+
+void showIMUData() {
+    if (!icmAvailable) {
+        Serial.println("[IMU] ICM20948 sensor not available");
+        Serial.println("[IMU] Run 'scan' command to check I2C devices");
+        return;
+    }
+
+    // Always try to read data, don't wait for dataReady()
+    icm.getAGMT();
+    
+    Serial.println("\n=== ICM20948 Sensor Data ===");
+    
+    Serial.println("Accelerometer (mg):");
+    Serial.print("  X: "); Serial.print(icm.accX(), 2);
+    Serial.print("  Y: "); Serial.print(icm.accY(), 2);
+    Serial.print("  Z: "); Serial.println(icm.accZ(), 2);
+    
+    Serial.println("Gyroscope (DPS):");
+    Serial.print("  X: "); Serial.print(icm.gyrX(), 2);
+    Serial.print("  Y: "); Serial.print(icm.gyrY(), 2);
+    Serial.print("  Z: "); Serial.println(icm.gyrZ(), 2);
+    
+    Serial.println("Magnetometer (µT):");
+    Serial.print("  X: "); Serial.print(icm.magX(), 2);
+    Serial.print("  Y: "); Serial.print(icm.magY(), 2);
+    Serial.print("  Z: "); Serial.println(icm.magZ(), 2);
+    
+    Serial.print("Temperature: ");
+    Serial.print(icm.temp(), 2);
+    Serial.println(" °C");
+    
+    Serial.println("============================\n");
+}
+
 String processCommand(String input, bool isBLE) {
     String response = "";
     
@@ -203,6 +303,12 @@ String processCommand(String input, bool isBLE) {
     } else if (input == "m") {
         showMemoryInfo();
         response = "Memory info displayed on USB Serial";
+    } else if (input == "i") {
+        showIMUData();
+        response = "IMU data displayed on USB Serial";
+    } else if (input == "scan") {
+        scanI2C();
+        response = "I2C scan completed";
     } else if (input.length() > 0) {
         response = "Echo: " + input;
         if (!isBLE) {
@@ -222,6 +328,38 @@ void setup() {
     Serial.println("Board: Seeed XIAO ESP32S3");
     Serial.println("USB Port: COM9");
     Serial.println("Baud Rate: 115200");
+    
+    // Initialize I2C for ICM20948 with explicit pins
+    Serial.println("[Setup] Initializing I2C...");
+    Wire.begin(I2C_SDA, I2C_SCL);  // Explicit pin assignment
+    Wire.setClock(400000); // 400kHz I2C clock
+    Serial.print("[Setup] I2C initialized on SDA=GPIO");
+    Serial.print(I2C_SDA);
+    Serial.print(", SCL=GPIO");
+    Serial.println(I2C_SCL);
+    Serial.println("[Setup] Measure SCL with multimeter - should be 3.3V when idle");
+    delay(100);  // Give I2C time to stabilize
+    
+    // Initialize ICM20948 sensor
+    Serial.println("[Setup] Initializing ICM20948 sensor...");
+    Serial.print("[Setup] Trying I2C address 0x");
+    Serial.println(AD0_VAL ? "69" : "68");
+    
+    icm.begin(Wire, AD0_VAL);
+    
+    Serial.print("[Setup] Initialization returned: ");
+    Serial.println(icm.statusString());
+    
+    if (icm.status == ICM_20948_Stat_Ok) {
+        icmAvailable = true;
+        Serial.println("[Setup] ✓ ICM20948 sensor initialized successfully!");
+        Serial.println("[Setup] Sensor ready to read data");
+    } else {
+        icmAvailable = false;
+        Serial.println("[Setup] ✗ ICM20948 sensor initialization failed!");
+        Serial.println("[Setup] Check wiring: SDA=GPIO5, SCL=GPIO6, VCC(3.3V), GND");
+        Serial.println("[Setup] Type 'scan' to scan I2C bus for devices");
+    }
     
     // Initialize BLE
     setupBLE();

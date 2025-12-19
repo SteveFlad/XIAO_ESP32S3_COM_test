@@ -182,6 +182,7 @@ class ESP32S3_GUI:
         ttk.Button(quick_frame, text="Status (s)", command=lambda: self.send_serial_command_direct("s")).pack(side='left', padx=2)
         ttk.Button(quick_frame, text="Help (h)", command=lambda: self.send_serial_command_direct("h")).pack(side='left', padx=2)
         ttk.Button(quick_frame, text="Test (t)", command=lambda: self.send_serial_command_direct("t")).pack(side='left', padx=2)
+        ttk.Button(quick_frame, text="IMU (i)", command=lambda: self.send_serial_command_direct("i")).pack(side='left', padx=2)
         ttk.Button(quick_frame, text="Memory (m)", command=lambda: self.send_serial_command_direct("m")).pack(side='left', padx=2)
         ttk.Button(quick_frame, text="Send", command=self.send_serial_command).pack(side='left', padx=2)
     
