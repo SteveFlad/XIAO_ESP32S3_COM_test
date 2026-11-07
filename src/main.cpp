@@ -15,7 +15,6 @@
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
-#include <BLE2902.h>
 #include <ICM_20948.h>
 #include <Wire.h>
 
@@ -67,7 +66,7 @@ String processCommand(String input, bool isBLE);
 // BLE Characteristic Callbacks
 class MyCallbacks: public BLECharacteristicCallbacks {
     void onWrite(BLECharacteristic *pChar) {
-        std::string rxValue = pChar->getValue();
+        auto rxValue = pChar->getValue();
         bleMessageCount++;
         
         if (rxValue.length() > 0) {
@@ -106,9 +105,8 @@ void setupBLE() {
                         BLECharacteristic::PROPERTY_WRITE |
                         BLECharacteristic::PROPERTY_NOTIFY
                     );
-
     pCharacteristic->setCallbacks(new MyCallbacks());
-    pCharacteristic->addDescriptor(new BLE2902());
+    pCharacteristic->setCallbacks(new MyCallbacks());
     pCharacteristic->setValue("Hello from XIAO ESP32S3!");
     
     pService->start();
